@@ -3,12 +3,16 @@ package net;
 import cli.InvalidCommandLineArgumentException;
 import collection.CollectionElement;
 import com.thoughtworks.xstream.XStream;
+import com.thoughtworks.xstream.XStreamException;
 
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.PriorityBlockingQueue;
 
@@ -16,6 +20,7 @@ public class Server implements Runnable, Closeable {
     private boolean shouldRun = true;
     private Queue<CollectionElement> collection = new PriorityBlockingQueue<>();
 
+    private File file;
     private XStream xStream = new XStream();
     private DatagramChannel channel;
 
@@ -34,6 +39,14 @@ public class Server implements Runnable, Closeable {
         if (port < 1024 || port > 65_535) {
             throw new InvalidCommandLineArgumentException("Port should be between 1024 and 65 535");
         }
+
+        String envname = "LAB6_SAVE_PATH";
+        String envval = System.getenv(envname);
+        if (envval == null || envval.isEmpty()) {
+            throw new InvalidCommandLineArgumentException("Environment variable 'LAB6_SAVE_PATH' should be set");
+        }
+
+        file = new File(envval);
 
         channel = DatagramChannel.open();
         channel.bind(new InetSocketAddress(port));
@@ -58,15 +71,27 @@ public class Server implements Runnable, Closeable {
         });
         messageProcessor.setRequestProcessor(Message.Head.REMOVE, msg -> {
             if (msg.getBody() instanceof CollectionElement) {
-                collection.remove((CollectionElement) msg.getBody());
+                collection.remove(msg.getBody());
             }
             return null;
         });
-        messageProcessor.setRequestProcessor(Message.Head.SHOW, msg -> null);
-        messageProcessor.setRequestProcessor(Message.Head.IMPORT, msg -> null);
-        messageProcessor.setRequestProcessor(Message.Head.LOAD, msg -> null);
-        messageProcessor.setRequestProcessor(Message.Head.SAVE, msg -> null);
-        messageProcessor.setRequestProcessor(Message.Head.STOP, msg -> null);
+        messageProcessor.setRequestProcessor(Message.Head.SHOW, msg -> showMessage());
+        messageProcessor.setRequestProcessor(Message.Head.IMPORT, msg -> {
+            importCollection(msg);
+            return null;
+        });
+        messageProcessor.setRequestProcessor(Message.Head.LOAD, msg -> {
+            load();
+            return null;
+        });
+        messageProcessor.setRequestProcessor(Message.Head.SAVE, msg -> {
+            save();
+            return null;
+        });
+        messageProcessor.setRequestProcessor(Message.Head.STOP, msg -> {
+            shouldRun = false;
+            return null;
+        });
 
         ByteBuffer buffer = ByteBuffer.allocate(0x10000);
 
@@ -128,11 +153,58 @@ public class Server implements Runnable, Closeable {
                 String.format("%s of size %d", collection.getClass().getTypeName(), collection.size()));
     }
 
-    private void removeFirst() {
+    private Message showMessage() {
+        List<CollectionElement> list;
+        synchronized (collection) {
+            list = new ArrayList<>(collection);
+        }
 
+        list.sort(CollectionElement::compareTo);
+        return new Message(false, Message.Head.SHOW, list);
+    }
+
+    private void importCollection(Message msg) {
+        String text = msg.getBody().toString();
+        try {
+            Object obj = xStream.fromXML(text);
+            if (obj instanceof Collection) {
+                Collection saved = (Collection) obj;
+                if (saved.stream().allMatch(o -> o instanceof CollectionElement)) {
+                    synchronized (collection) {
+                        collection.clear();
+                        collection.addAll(saved);
+                    }
+                }
+            }
+        } catch (XStreamException ignored) {
+        }
+    }
+
+    private void load() {
+        Object obj = xStream.fromXML(file);
+        if (obj instanceof Collection) {
+            Collection saved = (Collection) obj;
+            if (saved.stream().allMatch(o -> o instanceof CollectionElement)) {
+                synchronized (collection) {
+                    collection.clear();
+                    collection.addAll(saved);
+                }
+            }
+        }
+    }
+
+    private void save() {
+        try (OutputStream outputStream = new FileOutputStream(file)) {
+            xStream.toXML(collection, outputStream);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void removeFirst() {
+        collection.poll();
     }
 
     private void removeLast() {
-
     }
 }
