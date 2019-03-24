@@ -3,19 +3,20 @@ package net;
 import cli.ConsoleInterface;
 import cli.InvalidCommandLineArgumentException;
 import cli.UnknownCommandException;
+import collection.CollectionElement;
 import com.google.gson.Gson;
+import com.google.gson.JsonParseException;
 
-import java.io.ByteArrayOutputStream;
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.util.List;
 import java.util.Scanner;
 
 public class Client implements Runnable, Closeable {
     private boolean shouldRun = true;
+    private MessageProcessor messageProcessor = new MessageProcessor();
     private Gson gson = new Gson();
     private DatagramSocket socket;
     private InetAddress address;
@@ -39,13 +40,41 @@ public class Client implements Runnable, Closeable {
         }
 
         socket = new DatagramSocket();
+        socket.setSoTimeout(2000);
+
+        messageProcessor.setResponseProcessor(Message.Head.INFO, msg -> System.out.println(msg.getBody()));
+        messageProcessor.setResponseProcessor(Message.Head.SHOW, msg -> {
+            if (!(msg.getBody() instanceof List)) {
+                return;
+            }
+            List list = (List) msg.getBody();
+            list.forEach(System.out::println);
+        });
+        messageProcessor.setResponseProcessor(Message.Head.STOP, msg -> shouldRun = false);
     }
 
     public void run() {
         try (Scanner scanner = new Scanner(System.in)) {
             ConsoleInterface cli = new ConsoleInterface(scanner);
             cli.setCommand("exit", line -> shouldRun = false);
-            cli.setCommand("echo", this::sendEcho);
+            cli.setCommand("stop",
+                    line -> sendRequest(new Message(true, Message.Head.STOP, null)));
+            cli.setCommand("info",
+                    line -> sendRequest(new Message(true, Message.Head.INFO, null)));
+            cli.setCommand("remove_first",
+                    line -> sendRequest(new Message(true, Message.Head.REMOVE_FIRST, null)));
+            cli.setCommand("remove_last",
+                    line -> sendRequest(new Message(true, Message.Head.REMOVE_LAST, null)));
+            cli.setCommand("add",
+                    line -> sendRequest(messageWithElement(Message.Head.ADD, line)));
+            cli.setCommand("remove",
+                    line -> sendRequest(messageWithElement(Message.Head.REMOVE, line)));
+            cli.setCommand("show",
+                    line -> sendRequest(new Message(true, Message.Head.SHOW, null)));
+            cli.setCommand("load",
+                    line -> sendRequest(new Message(true, Message.Head.LOAD, null)));
+            cli.setCommand("save",
+                    line -> sendRequest(new Message(true, Message.Head.SAVE, null)));
 
             while (shouldRun) {
                 try {
@@ -62,20 +91,58 @@ public class Client implements Runnable, Closeable {
         socket.close();
     }
 
-    private void sendEcho(String line) {
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+    private void sendRequest(Message message) {
+        if (message == null) {
+            return;
+        }
 
-        try (ObjectOutputStream oo = new ObjectOutputStream(byteArrayOutputStream)) {
-            oo.writeObject(line);
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try (ObjectOutputStream oo = new ObjectOutputStream(outputStream)) {
+            oo.writeObject(message);
         } catch (IOException ignored) {
         }
 
-        byte[] byteArray = byteArrayOutputStream.toByteArray();
-        DatagramPacket packet = new DatagramPacket(byteArray, byteArray.length, address, port);
+        byte[] sendBytes = outputStream.toByteArray();
+        DatagramPacket sendPacket = new DatagramPacket(sendBytes, sendBytes.length, address, port);
+
+
         try {
-            socket.send(packet);
+            socket.send(sendPacket);
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Could not send request to server");
+            return;
         }
+
+        byte[] receiveBytes = new byte[0x10000];
+        DatagramPacket receivePacket = new DatagramPacket(receiveBytes, receiveBytes.length);
+
+        try {
+            socket.receive(receivePacket);
+
+            ByteArrayInputStream inputStream = new ByteArrayInputStream(receiveBytes);
+            try (ObjectInputStream oi = new ObjectInputStream(inputStream)) {
+                Object obj = oi.readObject();
+                if (obj instanceof Message) {
+                    messageProcessor.process((Message) obj);
+                }
+            } catch (ClassNotFoundException ignored) {
+            }
+        } catch (IOException e) {
+            System.err.println("Could not get response from server");
+        }
+    }
+
+    private Message messageWithElement(Message.Head head, String line) {
+        try {
+            CollectionElement element = gson.fromJson(line, CollectionElement.class);
+            return new Message(true, head, element);
+        } catch (JsonParseException e) {
+            System.err.println("Could not parse JSON object");
+            return null;
+        }
+    }
+
+    private Message importMessage(String line) {
+        return null;
     }
 }
