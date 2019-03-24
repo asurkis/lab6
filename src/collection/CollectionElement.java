@@ -31,12 +31,14 @@ public class CollectionElement implements Serializable, Cloneable, Comparable<Co
 
     @Override
     public int compareTo(CollectionElement collectionElement) {
-        return 0;
+        return Double.compare(size, collectionElement.size);
     }
 
     @Override
     public String toString() {
-        return String.format("{ name: %s; size: %f; position: %s, created: %s }", name, size, position, creationDate);
+        return String.format("{ name: %s; size: %f; position: %s, created: %s }",
+                name == null || name.isEmpty() ? "<empty>" : name,
+                size, position, creationDate);
     }
 
     @Override

@@ -3,16 +3,17 @@ package cli;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.function.Consumer;
 
 public class ConsoleInterface {
-    private Map<String, Command> commands = new HashMap<>();
+    private Map<String, Consumer<String>> commands = new HashMap<>();
     private Scanner scanner;
 
     public ConsoleInterface(Scanner scanner) {
         this.scanner = scanner;
     }
 
-    public void setCommand(String name, Command command) {
+    public void setCommand(String name, Consumer<String> command) {
         commands.put(name, command);
     }
 
@@ -29,7 +30,7 @@ public class ConsoleInterface {
         String arguments = line.substring(splitIndex);
 
         if (commands.containsKey(name)) {
-            commands.get(name).exec(arguments);
+            commands.get(name).accept(arguments);
         } else {
             throw new UnknownCommandException(name);
         }
