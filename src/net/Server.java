@@ -10,18 +10,15 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.PriorityBlockingQueue;
 
 public class Server implements Runnable, Closeable {
     private boolean shouldRun = true;
-    private Queue<CollectionElement> collection = new PriorityBlockingQueue<>();
+    private final Queue<CollectionElement> collection = new PriorityBlockingQueue<>();
 
-    private File file;
-    private XStream xStream = new XStream();
+    private final File file;
+    private final XStream xStream = new XStream();
     private DatagramChannel channel;
 
     public Server(String[] args) throws IOException, InvalidCommandLineArgumentException {
@@ -47,6 +44,8 @@ public class Server implements Runnable, Closeable {
         }
 
         file = new File(envval);
+        Runtime.getRuntime().addShutdownHook(new Thread(this::save));
+        load();
 
         channel = DatagramChannel.open();
         channel.bind(new InetSocketAddress(port));
@@ -93,15 +92,13 @@ public class Server implements Runnable, Closeable {
             return null;
         });
 
-        ByteBuffer buffer = ByteBuffer.allocate(0x10000);
-
         while (shouldRun) {
+            ByteBuffer buffer = ByteBuffer.allocate(0x10000);
             SocketAddress remoteAddress;
 
             try {
                 remoteAddress = channel.receive(buffer);
             } catch (IOException e) {
-                e.printStackTrace();
                 continue;
             }
 
@@ -181,7 +178,10 @@ public class Server implements Runnable, Closeable {
     }
 
     private void load() {
-        Object obj = xStream.fromXML(file);
+        Object obj;
+        synchronized (xStream) {
+            obj = xStream.fromXML(file);
+        }
         if (obj instanceof Collection) {
             Collection saved = (Collection) obj;
             if (saved.stream().allMatch(o -> o instanceof CollectionElement)) {
@@ -194,10 +194,16 @@ public class Server implements Runnable, Closeable {
     }
 
     private void save() {
-        try (OutputStream outputStream = new FileOutputStream(file)) {
-            xStream.toXML(collection, outputStream);
-        } catch (IOException e) {
-            e.printStackTrace();
+        synchronized (file) {
+            try (OutputStream outputStream = new FileOutputStream(file)) {
+                synchronized (xStream) {
+                    synchronized (collection) {
+                        xStream.toXML(new ArrayList<>(collection), outputStream);
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -206,5 +212,9 @@ public class Server implements Runnable, Closeable {
     }
 
     private void removeLast() {
+        synchronized (collection) {
+            Optional<CollectionElement> element = collection.stream().max(CollectionElement::compareTo);
+            element.map(collection::remove);
+        }
     }
 }

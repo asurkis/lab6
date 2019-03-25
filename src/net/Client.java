@@ -11,6 +11,8 @@ import java.io.*;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.util.List;
 import java.util.Scanner;
 
@@ -44,13 +46,11 @@ public class Client implements Runnable, Closeable {
 
         messageProcessor.setResponseProcessor(Message.Head.INFO, msg -> System.out.println(msg.getBody()));
         messageProcessor.setResponseProcessor(Message.Head.SHOW, msg -> {
-            if (!(msg.getBody() instanceof List)) {
-                return;
+            if (msg.getBody() instanceof List) {
+                List list = (List) msg.getBody();
+                list.forEach(System.out::println);
             }
-            List list = (List) msg.getBody();
-            list.forEach(System.out::println);
         });
-        messageProcessor.setResponseProcessor(Message.Head.STOP, msg -> shouldRun = false);
     }
 
     public void run() {
@@ -75,6 +75,8 @@ public class Client implements Runnable, Closeable {
                     line -> sendRequest(new Message(true, Message.Head.LOAD, null)));
             cli.setCommand("save",
                     line -> sendRequest(new Message(true, Message.Head.SAVE, null)));
+            cli.setCommand("import",
+                    line -> sendRequest(importMessage(line)));
 
             while (shouldRun) {
                 try {
@@ -113,6 +115,10 @@ public class Client implements Runnable, Closeable {
             return;
         }
 
+        if (!messageProcessor.hasResponseProcessor(message.getHead())) {
+            return;
+        }
+
         byte[] receiveBytes = new byte[0x10000];
         DatagramPacket receivePacket = new DatagramPacket(receiveBytes, receiveBytes.length);
 
@@ -143,6 +149,12 @@ public class Client implements Runnable, Closeable {
     }
 
     private Message importMessage(String line) {
-        return null;
+        try {
+            String str = new String(Files.readAllBytes(new File(line.trim()).toPath()));
+            return new Message(true, Message.Head.IMPORT, str);
+        } catch (IOException | InvalidPathException e) {
+            System.err.println("Could not read file: " + e.getMessage());
+            return null;
+        }
     }
 }

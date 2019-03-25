@@ -36,7 +36,7 @@ public class CollectionElement implements Serializable, Cloneable, Comparable<Co
 
     @Override
     public String toString() {
-        return String.format("{ name: %s; size: %f; position: %s, created: %s }",
+        return String.format("{ name: %s; size: %f; position: %s; created: %s }",
                 name == null || name.isEmpty() ? "<empty>" : name,
                 size, position, creationDate);
     }

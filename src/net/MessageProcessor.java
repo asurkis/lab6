@@ -17,6 +17,14 @@ public class MessageProcessor {
         responseMap.put(type, processor);
     }
 
+    public boolean hasRequestProcessor(Message.Head type) {
+        return requestMap.containsKey(type);
+    }
+
+    public boolean hasResponseProcessor(Message.Head type) {
+        return responseMap.containsKey(type);
+    }
+
     public Message process(Message message) {
         if (message.isRequest()) {
             if (requestMap.containsKey(message.getHead())) {
