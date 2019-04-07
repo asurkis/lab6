@@ -178,15 +178,20 @@ public class Server implements Runnable, Closeable {
     }
 
     private void load() {
+        collection.clear();
         Object obj;
         synchronized (xStream) {
-            obj = xStream.fromXML(file);
+            try {
+                obj = xStream.fromXML(file);
+            } catch (Exception e) {
+                System.err.println("Could not load file. Using empty collection");
+                return;
+            }
         }
         if (obj instanceof Collection) {
             Collection saved = (Collection) obj;
             if (saved.stream().allMatch(o -> o instanceof CollectionElement)) {
                 synchronized (collection) {
-                    collection.clear();
                     collection.addAll(saved);
                 }
             }

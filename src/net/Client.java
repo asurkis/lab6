@@ -14,6 +14,7 @@ import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 
 public class Client implements Runnable, Closeable {
@@ -83,6 +84,8 @@ public class Client implements Runnable, Closeable {
                     cli.execNextLine();
                 } catch (UnknownCommandException e) {
                     System.err.println(e.getMessage());
+                } catch (NoSuchElementException ignored) {
+                    shouldRun = false;
                 }
             }
         }
